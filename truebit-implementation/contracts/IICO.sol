@@ -167,8 +167,10 @@ contract IICO {
 		Bid storage bid = bids[lastBidID];
 		
 		// Update the contribution amount with the bonus
-		sumAcceptedContrib += bid.contrib;
-		sumAcceptedVirtualContrib += bid.contrib + (bid.contrib * bid.bonus) / BONUS_DIVISOR;
+		if (bid.active) {
+			sumAcceptedContrib += bid.contrib;
+			sumAcceptedVirtualContrib += bid.contrib + (bid.contrib * bid.bonus) / BONUS_DIVISOR;
+		}
 
 		// Place the bids in the two buckets
         contributorBidIDs[msg.sender].push(lastBidID);
@@ -314,16 +316,15 @@ contract IICO {
 
 		for (i = 0; i < _bids.length; i++) {
 			bid = bids[_bids[i]];
-			if (bid.active) {
-				if (localSumContrib > bid.maxValuation) {
-					bid.active = false;
-					localSumContrib -= bid.contrib;
-					if (bid.pokeOutReward != 0) {
-						msg.sender.transfer(bid.pokeOutReward);
-						bid.pokeOutReward = 0;
-					}
-					emit PokeOut(msg.sender, _bids[i]);
+			if (bid.active && (localSumContrib < bid.personalMin || localSumContrib > bid.maxValuation)) {
+				bid.active = false;
+				localSumContrib -= bid.contrib;
+				// TODO: subtract from the bonus as well (review how to do that in withdraw)
+				if (bid.pokeOutReward != 0) {
+					msg.sender.transfer(bid.pokeOutReward);
+					bid.pokeOutReward = 0;
 				}
+				emit PokeOut(msg.sender, _bids[i]);
 			}
 		}
 
@@ -338,17 +339,18 @@ contract IICO {
 
 		for (i = 0; i < _bids.length; i++) {
 			bid = bids[_bids[i]];
-			if (!bid.active) {
-				if (localSumContrib >= bid.personalMin) {
-					bid.active = true;
-					localSumContrib += bid.contrib;
-					if (bid.pokeInReward != 0) {
-						msg.sender.transfer(bid.pokeInReward);
-						bid.pokeInReward = 0;
-					}
-					emit PokeIn(msg.sender, _bids[i]);
-				}
+
+			if (!bid.active && localSumContrib+bid.contrib >= bid.personalMin 
+				&& localSumContrib + bid.contrib <= bid.maxValuation) {
+				bid.active = true;
+				localSumContrib += bid.contrib;
+				if (bid.pokeInReward != 0) {
+					msg.sender.transfer(bid.pokeInReward);
+					bid.pokeInReward = 0;
+				}	
+				emit PokeIn(msg.sender, _bids[i]);
 			}
+
 		}
 
 		sumAcceptedContrib = localSumContrib;
